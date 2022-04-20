@@ -65,6 +65,24 @@
 using namespace cv;
 using namespace std;
 
+int descriptor_distance(const cv::Mat &a, const cv::Mat &b)
+{
+    const int *pa = a.ptr<int32_t>();
+    const int *pb = b.ptr<int32_t>();
+
+    int dist=0;
+
+    for(int i=0; i<8; i++, pa++, pb++)
+    {
+        unsigned  int v = *pa ^ *pb;
+        v = v - ((v >> 1) & 0x55555555);
+        v = (v & 0x33333333) + ((v >> 2) & 0x33333333);
+        dist += (((v + (v >> 4)) & 0xF0F0F0F) * 0x1010101) >> 24;
+    }
+
+    return dist;
+}
+
 namespace ORB_SLAM3
 {
 
@@ -860,6 +878,49 @@ namespace ORB_SLAM3
 
                     if(!vKeysCell.empty())
                     {
+                        // For each keypoint, compute the BRIEF descriptor;
+                        for (vector<cv::KeyPoint>::iterator vit = vKeysCell.begin(); vit != vKeysCell.end(); ++vit)
+                        {
+                            // Create descriptor array that is len of vKeysCell
+                            Mat desc = cv::Mat(vKeysCell.size(), 32, CV_8U);
+
+                            // Use computeDescriptors function
+                            computeDescriptors(mvImagePyramid[level].rowRange(iniY,maxY).colRange(iniX,maxX), *vit, desc, pattern);
+
+                            // Compare all descriptors in desc to each other to see if any match
+                            // Create matches vector
+                            vector<vector<DMatch> > matches;
+                            for (int d = 0; d < desc.rows; d++)
+                            {
+                                // Compare each descriptor in desc to each other
+                                for (int d2 = 0; d2 < desc.rows; d2++)
+                                {
+                                    // If they match, add to matches vector
+                                    //TODO: Set threshold here
+                                    if (d != d2 && descriptor_distance(desc.row(d), desc.row(d2)) < 0.5)
+                                    {
+                                        // Add to matches vector
+                                        matches.push_back(d);
+                                        matches.push_back(d2);
+                                    }
+                                }
+                            }
+
+
+
+                        }
+
+                        // Remove all matches from vKeysCell that are not in matches vector
+                        for (vector<cv::KeyPoint>::iterator vit = vKeysCell.begin(); vit != vKeysCell.end(); ++vit)
+                        {
+                            // If vit is not in matches vector, remove it
+                            if (find(matches.begin(), matches.end(), vit - vKeysCell.begin()) == matches.end())
+                            {
+                                vKeysCell.erase(vit);
+                                vit--;
+                            }
+                        }
+
                         for(vector<cv::KeyPoint>::iterator vit=vKeysCell.begin(); vit!=vKeysCell.end();vit++)
                         {
                             (*vit).pt.x+=j*wCell;
